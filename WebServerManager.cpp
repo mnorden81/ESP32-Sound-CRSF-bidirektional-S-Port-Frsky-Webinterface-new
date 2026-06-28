@@ -538,7 +538,12 @@ function renderDbg(){
 }
 function renderLipo(){
   var el=document.getElementById('lipo-packs');
-  if(!el||!dbg.sport)return;
+  if(!el)return;
+  if(!dbg.sport){el.innerHTML='<div style="color:var(--sub);font-size:12px">Keine Daten empfangen</div>';return;}
+  if(dbg.hw_config!==undefined&&dbg.hw_config!==3){
+    el.innerHTML='<div style="color:var(--yellow);font-size:12px">&#9888; Hardware Config ist nicht V4 &ndash; S.Port LiPo-Telemetrie inaktiv.<br>Auf V4 umstellen und neu starten.</div>';
+    return;
+  }
   var sp=dbg.sport,h='';
   sp.packs.forEach(function(p,i){
     h+='<div style="margin-bottom:14px">';
@@ -556,7 +561,7 @@ function renderLipo(){
       }
       h+='</div>';
     }else{
-      h+='<div style="color:var(--sub);font-size:12px;padding:6px 0">Kein Signal</div>';
+      h+='<div style="color:var(--sub);font-size:12px;padding:6px 0">Kein Signal &ndash; Sensor angeschlossen und Poll-ID korrekt?</div>';
     }
     h+='</div>';
   });
@@ -874,6 +879,7 @@ void WebServerManager::handleApiDebug() {
   j += "]},";
 
   // S.Port Live-Daten
+  j += "\"hw_config\":"  + String(config.Hardware_Config) + ",";
   j += "\"sport\":{";
   j += "\"total_v\":"  + String(sportGetTotalVoltage(), 2)      + ",";
   j += "\"min_cell\":" + String(sportGetMinCell(), 3)           + ",";

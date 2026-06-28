@@ -2,11 +2,11 @@
 #define SPORT_LIPO_H
 
 /*
- * sport_lipo.h  –  ESP32-RC-Sound v1.22  (Hardware V4)
+ * sport_lipo.h  –  ESP32-RC-Sound v1.23  (Hardware V4)
  *
- * S.Port Master-Polling für bis zu 2 FrSky FLVSS/MLVSS LiPo-Sensoren.
+ * S.Port Master-Polling fuer bis zu 2 FrSky FLVSS/MLVSS LiPo-Sensoren.
  * Der ESP32 übernimmt die Rolle des S.Port-Masters und pollt die Sensoren
- * aktiv über einen dedizierten Hardware-UART (Serial1).
+ * aktiv ueber einen dedizierten Hardware-UART (dynamisch: Serial2 bei SBUS, Serial1 bei CRSF).
  *
  * Hardware V4 – Pins (in V1/V2/V3 alle frei):
  *   GPIO 33  → S.Port TX  (Output, kein Strapping)
@@ -26,11 +26,12 @@
  *   In V2: GPIO 32 = PWM 5, GPIO 33 = PWM 6 – in V4 nicht verwendet
  *   In V3: beide frei (V3 hat keine PWM-Eingänge)
  *   Kein Strapping-Pin, kein Boot-Konflikt, vollwertig Input+Output
- *   Serial1 frei (Serial2 = SBUS auf GPIO 16/17)
+ *   SBUS-Betrieb: Serial1=SBUS -> S.Port auf Serial2
+ *   CRSF-Betrieb: Serial2=CRSF -> S.Port auf Serial1
  *
  * Sensor Poll-IDs (konfigurierbar über Weboberfläche Seite 12):
- *   Sensor 1 (Pack 1): Werkseinstellung Physical ID 0x02 → Poll-Byte 0xA1
- *   Sensor 2 (Pack 2): Umprogrammiert auf Physical ID 0x03 → Poll-Byte 0x22
+ *   Sensor 1 (Pack 1): Physical ID 1 (EdgeTX) → Poll-Byte 0xA1
+ *   Sensor 2 (Pack 2): Physical ID 2 (EdgeTX) → Poll-Byte 0x22
  *
  * ⚠ 12S Hinweis: Bei 2×6S in Reihe darf GND NUR am ersten Sensor
  *   angeschlossen werden. Am zweiten Sensor entsteht sonst ein Kurzschluss!
@@ -41,7 +42,7 @@
 // ── Pin-Konfiguration V4 ──────────────────────────────────────────────
 #define SPORT_TX_PIN     33      // Output GPIO, kein Strapping
 #define SPORT_RX_PIN     32      // Input GPIO, kein Strapping
-#define SPORT_UART_PORT   1      // Serial1 (Serial2 = SBUS/CRSF auf GPIO 16/17)
+// SPORT_UART_PORT: nicht mehr als Define – wird dynamisch in sportLipoInit() gesetzt
 
 // S.Port: 57600 Baud, 8N1, invertiert
 #define SPORT_BAUD       57600
@@ -64,8 +65,17 @@
 #define SPORT_STUFF_MASK   0x20     // XOR-Maske nach Escape
 
 // ── Timing ────────────────────────────────────────────────────────────
-#define SPORT_POLL_MS      20       // Poll-Intervall pro Sensor (ms)
+#define SPORT_POLL_MS      30       // Poll-Intervall pro Sensor (ms) – gibt Antwortzeit
 #define SPORT_TIMEOUT_MS   2000     // Sensor offline nach dieser Zeit ohne Paket
+
+// ── Diagnose ──────────────────────────────────────────────────────────
+// SPORT_DEBUG_RAW = 1 : jede Sekunde RX-Byte-Zähler + Hexdump auf Serial.
+// Zum Debuggen aktiv. Für Normalbetrieb auf 0 setzen.
+#define SPORT_DEBUG_RAW    1
+
+// SPORT_DEBUG_PROBE = 1 : Diagnose-Sweep (deaktiviert, war fehlerhaft).
+#define SPORT_DEBUG_PROBE  0
+#define SPORT_PROBE_PHASE_MS 5000   // Dauer pro ID-Phase im Sweep (ms)
 
 // ── Datenstruktur pro Sensor ──────────────────────────────────────────
 struct LipoSensorData {

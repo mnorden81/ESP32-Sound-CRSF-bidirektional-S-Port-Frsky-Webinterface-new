@@ -1,5 +1,5 @@
 /*
- * sport_lipo.cpp  –  ESP32-RC-Sound v1.22  (Hardware V4)
+ * sport_lipo.cpp  –  ESP32-RC-Sound v1.23  (Hardware V4)
  *
  * S.Port Master: ESP32 pollt FrSky FLVSS/MLVSS Sensoren und parst
  * Einzelzell-Spannungen. Automatische Erkennung der Zellanzahl (1–6S).
@@ -33,18 +33,48 @@ extern CRSF crsf;
 LipoSensorData lipoSensor[SPORT_NUM_SENSORS] = {};
 
 // ── UART-Instanz ──────────────────────────────────────────────────────
-static HardwareSerial sportSerial(SPORT_UART_PORT);  // Serial1 (GPIO 33 TX / GPIO 32 RX)
+// SBUS belegt Serial1, CRSF belegt Serial2.
+// S.Port bekommt den jeweils freien UART:
+//   SBUS-Betrieb (RC-System != 4) -> S.Port auf Serial2
+//   CRSF-Betrieb (RC-System == 4) -> S.Port auf Serial1
+static HardwareSerial* sportSerialPtr = nullptr;
 
 // ── State-Machine ─────────────────────────────────────────────────────
-enum SportRxState : uint8_t { WAIT_START, WAIT_PHYSID, RECV_DATA };
+// S.Port Sequenz nach einem Poll (Half-Duplex, eigenes Echo sichtbar):
+//
+//  Master TX:   0x7E  0xA1          (Poll: Start + Physical-ID)
+//  Bus Echo:    0x7E  0xA1          (eigenes Echo zurück)
+//  Sensor TX:   0x7E  0x10  D0..D6  CRC   (Antwort: Start + DATA_FRAME + 7 Bytes)
+//
+// Zustaende:
+//   WAIT_START  : warte auf 0x7E
+//   WAIT_ECHO   : erstes 0x7E gesehen – naechstes Byte ist Physical-ID-Echo (ignorieren)
+//   WAIT_FRAME  : Echo konsumiert – warte auf naechstes 0x7E (Sensor-Antwort)
+//   WAIT_FTYPE  : 0x7E der Sensor-Antwort gesehen – naechstes Byte muss 0x10 sein
+//   RECV_DATA   : sammle 7 Payload-Bytes + 1 CRC-Byte
+//
+enum SportRxState : uint8_t { WAIT_START, WAIT_ECHO, WAIT_FRAME, WAIT_FTYPE, RECV_DATA };
 static SportRxState rxState   = WAIT_START;
-static uint8_t      rxBuf[8]  = {};
+static uint8_t      rxBuf[7]  = {};
 static uint8_t      rxIdx     = 0;
 static bool         rxStuffed = false;
 
 // Welcher Sensor gerade auf Antwort wartet
 static uint8_t      pollSensor   = 0;
 static unsigned long lastPollMs  = 0;
+static uint8_t      lastPollId   = 0;   // Poll-ID der zuletzt gesehenen Antwort
+
+// Gemeinsame Zeitbasis: wird am Anfang von sportLipoUpdate() gesetzt und in
+// sportProcessByte() fuer lastUpdateMs genutzt. So rechnet der Timeout-Check
+// mit exakt demselben Zeitstempel -> kein vorzeichenloser Unterlauf moeglich.
+static unsigned long sportNow    = 0;
+
+#if SPORT_DEBUG_PROBE
+// Globale Zähler für den Diagnose-Sweep (werden in sportProcessByte erhöht)
+uint32_t g_probeResp   = 0;
+uint8_t  g_probeCells2 = 0;
+uint8_t  g_probeCells3 = 0;
+#endif
 
 // ── CRC (S.Port: Summe aller Bytes mod 256, dann 0xFF minus Ergebnis) ─
 static uint8_t sportCrc(const uint8_t* buf, uint8_t len) {
@@ -57,100 +87,141 @@ static uint8_t sportCrc(const uint8_t* buf, uint8_t len) {
 // ── Empfangenes Byte verarbeiten ──────────────────────────────────────
 static void sportProcessByte(uint8_t b) {
 
-    // 0x7E = neues Frame beginnt (auch unser eigenes Echo vom Poll)
+    // 0x7E ist immer Frame-Start
     if (b == SPORT_START_BYTE) {
-        rxState   = WAIT_PHYSID;
+        // Jedes 0x7E startet einen neuen Frame. Danach kommt die Poll-ID,
+        // dann DIREKT das DATA_FRAME (0x10) + Daten – KEIN zweites 0x7E.
+        rxState   = WAIT_ECHO;   // naechstes Byte = Poll-ID (Echo)
         rxIdx     = 0;
         rxStuffed = false;
         return;
     }
 
-    // Byte-Stuffing auflösen
-    if (!rxStuffed && b == SPORT_STUFF_BYTE) {
-        rxStuffed = true;
-        return;
-    }
-    if (rxStuffed) {
-        b ^= SPORT_STUFF_MASK;
-        rxStuffed = false;
-    }
-
     switch (rxState) {
 
-        case WAIT_PHYSID:
-            // Physical-ID Byte → ist unser eigenes Poll-Echo, ignorieren
-            // Danach kommen 8 Sensor-Antwort-Bytes
+        case WAIT_ECHO:
+            // Poll-ID (z.B. 0xA1 / 0x22). Merken, welcher Sensor antwortet,
+            // dann direkt auf das DATA_FRAME-Byte warten.
+            lastPollId = b;
+            rxState    = WAIT_FTYPE;
+            break;
+
+        case WAIT_FTYPE:
+            // Muss 0x10 (DATA_FRAME) sein. Alles andere (z.B. 0x00 = kein
+            // Sensor / Leerantwort) verwerfen und auf naechstes 0x7E warten.
+            if (b != SPORT_DATA_FRAME) {
+                rxState = WAIT_START;
+                break;
+            }
             rxState = RECV_DATA;
             rxIdx   = 0;
             break;
 
         case RECV_DATA:
-            if (rxIdx < 8) rxBuf[rxIdx++] = b;
-            if (rxIdx == 8) {
+            // Byte-Stuffing auflösen (nur in Nutzlast, nicht auf 0x7E)
+            if (!rxStuffed && b == SPORT_STUFF_BYTE) {
+                rxStuffed = true;
+                break;
+            }
+            if (rxStuffed) {
+                b ^= SPORT_STUFF_MASK;
+                rxStuffed = false;
+            }
+
+            if (rxIdx < 7) rxBuf[rxIdx++] = b;
+
+            if (rxIdx == 7) {
                 rxState = WAIT_START;
 
-                // ── CRC prüfen ────────────────────────────────────────
-                if (sportCrc(rxBuf, 7) != rxBuf[7]) return;
-
-                // ── Frame-Typ ─────────────────────────────────────────
-                if (rxBuf[0] != SPORT_DATA_FRAME) return;
+                // rxBuf layout (DATA_FRAME bereits in WAIT_FTYPE konsumiert):
+                //   [0..1] = Data-ID (LE)
+                //   [2..5] = Payload (LE)
+                //   [6]    = CRC
+                // S.Port CRC: Summe aller Bytes nach 0x7E: 0x10 + DataID[0..1] + Payload[0..3]
+                uint16_t crcSum = SPORT_DATA_FRAME;
+                for (uint8_t i = 0; i < 6; i++) crcSum += rxBuf[i];
+                crcSum = (crcSum >> 8) + (crcSum & 0xFF);
+                uint8_t expectedCrc = (uint8_t)(0xFF - crcSum);
+                if (expectedCrc != rxBuf[6]) break;
 
                 // ── Data-ID (16 Bit, LE) ──────────────────────────────
-                uint16_t dataId = (uint16_t)rxBuf[1] | ((uint16_t)rxBuf[2] << 8);
-                if (dataId < SPORT_CELLS_ID || dataId > (SPORT_CELLS_ID + 0x0F)) return;
+                uint16_t dataId = (uint16_t)rxBuf[0] | ((uint16_t)rxBuf[1] << 8);
+                if (dataId < SPORT_CELLS_ID || dataId > (SPORT_CELLS_ID + 0x0F)) break;
 
                 // ── Payload (32 Bit, LE) ──────────────────────────────
-                uint32_t val = (uint32_t)rxBuf[3]
-                             | ((uint32_t)rxBuf[4] << 8)
-                             | ((uint32_t)rxBuf[5] << 16)
-                             | ((uint32_t)rxBuf[6] << 24);
+                uint32_t val = (uint32_t)rxBuf[2]
+                             | ((uint32_t)rxBuf[3] << 8)
+                             | ((uint32_t)rxBuf[4] << 16)
+                             | ((uint32_t)rxBuf[5] << 24);
 
-                // ── CELLS dekodieren ──────────────────────────────────
-                uint8_t cellIdx    = (uint8_t)(val & 0x0F);
-                float   voltA      = ((val >>  4) & 0x7FF) * 0.005f;
-                uint8_t totalCells = (uint8_t)((val >> 15) & 0x07);
-                float   voltB      = ((val >> 18) & 0x7FF) * 0.005f;
+                // ── CELLS dekodieren (FrSky FLVSS / pawelsky-Format) ───
+                //   Bits  0-3  : firstCellNo (Index des ersten Zellpaars)
+                //   Bits  4-7  : cellNum     (Gesamtzahl Zellen im Pack)
+                //   Bits  8-19 : Zelle (firstCellNo)   * 500   (12 Bit)
+                //   Bits 20-31 : Zelle (firstCellNo+1) * 500   (12 Bit)
+                uint8_t firstCell  = (uint8_t)(val & 0x0F);
+                uint8_t totalCells = (uint8_t)((val >> 4) & 0x0F);
+                float   voltA      = ((val >> 8)  & 0xFFF) / 500.0f;
+                float   voltB      = ((val >> 20) & 0xFFF) / 500.0f;
 
-                LipoSensorData& s = lipoSensor[pollSensor];
+                // Leerantwort (cellNum==0) ignorieren – ist kein gueltiger Pack
+                if (totalCells == 0 || totalCells > SPORT_MAX_CELLS) break;
 
-                // Zellanzahl aus erstem Paket (cellIdx==0) lesen
-                if (cellIdx == 0 && totalCells >= 1 && totalCells <= SPORT_MAX_CELLS) {
-                    s.cellCount = totalCells;
+                // ── Sensor anhand der Poll-ID zuordnen ────────────────
+                // A1 -> Sensor 0 (Pack 1), 22 -> Sensor 1 (Pack 2).
+                // Faellt auf pollSensor zurueck, falls ID unbekannt.
+                uint8_t sIdx = pollSensor;
+                if (lastPollId == config.sport_poll_id[0])      sIdx = 0;
+                else if (lastPollId == config.sport_poll_id[1]) sIdx = 1;
+                if (sIdx >= SPORT_NUM_SENSORS) sIdx = 0;
+
+#if SPORT_DEBUG_RAW
+                Serial.printf("[CELL] pollID=0x%02X -> Sensor%d  cells=%d firstCell=%d  vA=%.3f vB=%.3f\n",
+                              lastPollId, sIdx + 1, totalCells, firstCell, voltA, voltB);
+#endif
+
+                LipoSensorData& s = lipoSensor[sIdx];
+                s.cellCount = totalCells;
+
+                // Spannungen an die richtigen Positionen schreiben
+                if (firstCell < SPORT_MAX_CELLS && voltA > 0.01f)
+                    s.cellVoltage[firstCell] = voltA;
+                if ((firstCell + 1) < SPORT_MAX_CELLS && voltB > 0.01f)
+                    s.cellVoltage[firstCell + 1] = voltB;
+
+                // Gesamt- und Minimalspannung neu berechnen (bekannte Zellen)
+                s.totalVoltage = 0.0f;
+                s.minCell      = 9.9f;
+                for (uint8_t i = 0; i < s.cellCount; i++) {
+                    s.totalVoltage += s.cellVoltage[i];
+                    if (s.cellVoltage[i] > 0.1f && s.cellVoltage[i] < s.minCell)
+                        s.minCell = s.cellVoltage[i];
                 }
-
-                // Spannungen eintragen
-                uint8_t idxA = cellIdx * 2;
-                uint8_t idxB = cellIdx * 2 + 1;
-                if (idxA < SPORT_MAX_CELLS) s.cellVoltage[idxA] = voltA;
-                if (idxB < SPORT_MAX_CELLS && voltB > 0.01f) s.cellVoltage[idxB] = voltB;
-
-                // Wenn letztes Paket des Sensors empfangen → Gesamtwerte berechnen
-                if (s.cellCount > 0) {
-                    uint8_t lastPktIdx = (s.cellCount - 1) / 2;
-                    if (cellIdx == lastPktIdx) {
-                        s.totalVoltage = 0.0f;
-                        s.minCell      = 9.9f;
-                        for (uint8_t i = 0; i < s.cellCount; i++) {
-                            s.totalVoltage += s.cellVoltage[i];
-                            if (s.cellVoltage[i] > 0.1f && s.cellVoltage[i] < s.minCell)
-                                s.minCell = s.cellVoltage[i];
-                        }
-                        s.lastUpdateMs = millis();
-                        s.online       = true;
-                    }
-                }
+                if (s.minCell > 9.0f) s.minCell = 0.0f;
+                // Gemeinsame Zeitbasis sportNow nutzen (vom Timeout-Check geteilt),
+                // damit (now - lastUpdateMs) niemals vorzeichenlos unterlaeuft und
+                // der Sensor nicht faelschlich sofort offline geht.
+                s.lastUpdateMs = sportNow;
+                s.online       = true;
             }
             break;
 
         default:
+            rxState = WAIT_START;
             break;
     }
 }
 
 // ── Initialisierung ───────────────────────────────────────────────────
 void sportLipoInit() {
-    // Serial2 mit invertiertem Signal (S.Port = invertierter UART)
-    sportSerial.begin(SPORT_BAUD, SERIAL_8N1, SPORT_RX_PIN, SPORT_TX_PIN, true);
+    // UART dynamisch waehlen: SBUS=Serial1 belegt -> S.Port auf Serial2
+    //                             CRSF=Serial2 belegt -> S.Port auf Serial1
+    if (config.Einkanal_RC_System == 4) {
+        sportSerialPtr = &Serial1;  // CRSF nutzt Serial2, Serial1 ist frei
+    } else {
+        sportSerialPtr = &Serial2;  // SBUS nutzt Serial1, Serial2 ist frei
+    }
+    sportSerialPtr->begin(SPORT_BAUD, SERIAL_8N1, SPORT_RX_PIN, SPORT_TX_PIN, true);
 
     // Sensor-Strukturen zurücksetzen
     for (uint8_t i = 0; i < SPORT_NUM_SENSORS; i++) {
@@ -161,18 +232,59 @@ void sportLipoInit() {
     pollSensor = 0;
     lastPollMs = 0;
 
-    Serial.printf("[S.Port] Init: TX=GPIO%d  RX=GPIO%d  %d Baud (invertiert)\n",
-                  SPORT_TX_PIN, SPORT_RX_PIN, SPORT_BAUD);
+    Serial.printf("[S.Port] Init: TX=GPIO%d  RX=GPIO%d  %d Baud (invertiert, UART%d)\n",
+                  SPORT_TX_PIN, SPORT_RX_PIN, SPORT_BAUD,
+                  (config.Einkanal_RC_System == 4) ? 1 : 2);
 }
 
 // ── Update (non-blocking, in loop() aufrufen) ─────────────────────────
 void sportLipoUpdate() {
     unsigned long now = millis();
+    sportNow = now;   // gemeinsame Zeitbasis fuer sportProcessByte() (lastUpdateMs)
+
+    // GARANTIERTE LEBENSZEICHEN-AUSGABE: beweist, dass diese Funktion laeuft.
+    // Nicht an sportSerialPtr o.ae. gekoppelt. Zaehlt Aufrufe pro Sekunde.
+    static unsigned long lastAlive = 0;
+    static uint32_t      callCount = 0;
+    callCount++;
+    if (now - lastAlive >= 1000) {
+        lastAlive = now;
+        bool ptrOk = (sportSerialPtr != nullptr);
+        uint32_t avail = ptrOk ? (uint32_t)sportSerialPtr->available() : 0;
+        Serial.printf("[S.Port LIVE] Updates/s=%lu  ptrOk=%d  avail=%lu\n",
+                      (unsigned long)callCount, ptrOk, (unsigned long)avail);
+        callCount = 0;
+    }
+
+#if SPORT_DEBUG_RAW
+    static unsigned long lastDbg = 0;
+    static uint32_t      rxByteCount = 0;
+    static uint8_t       dbgLine[32];
+    static uint8_t       dbgIdx = 0;
+#endif
 
     // Empfangene Bytes verarbeiten
-    while (sportSerial.available()) {
-        sportProcessByte((uint8_t)sportSerial.read());
+    while (sportSerialPtr->available()) {
+        uint8_t bb = (uint8_t)sportSerialPtr->read();
+#if SPORT_DEBUG_RAW
+        rxByteCount++;
+        if (dbgIdx < sizeof(dbgLine)) dbgLine[dbgIdx++] = bb;
+#endif
+        sportProcessByte(bb);
     }
+
+#if SPORT_DEBUG_RAW
+    // Alle 1000 ms: Anzahl RX-Bytes + die letzten empfangenen Bytes als Hex ausgeben
+    if (now - lastDbg >= 1000) {
+        lastDbg = now;
+        Serial.printf("[S.Port DBG] RX-Bytes/s: %lu  | letzte: ", (unsigned long)rxByteCount);
+        for (uint8_t i = 0; i < dbgIdx; i++) Serial.printf("%02X ", dbgLine[i]);
+        Serial.printf(" | Pack1.online=%d cells=%d\n",
+                      lipoSensor[0].online, lipoSensor[0].cellCount);
+        rxByteCount = 0;
+        dbgIdx      = 0;
+    }
+#endif
 
     // Sensor-Timeout prüfen
     for (uint8_t i = 0; i < SPORT_NUM_SENSORS; i++) {
@@ -186,21 +298,33 @@ void sportLipoUpdate() {
         }
     }
 
-    // Poll senden (Round-Robin)
+    // Anzahl aktiver (unterschiedlicher) Sensoren bestimmen:
+    // Sind beide Poll-IDs identisch, ist nur Sensor 1 konfiguriert.
+    uint8_t activeSensors = 1;
+    if (config.sport_poll_id[1] != config.sport_poll_id[0]) {
+        activeSensors = SPORT_NUM_SENSORS;
+    }
+
+    // Poll-Zyklus mit garantiertem Antwortfenster:
+    //   1. Poll senden, dann SPORT_RESPONSE_MS auf Antwort warten
+    //   2. erst danach den nächsten Sensor pollen
+    // So wird die Antwort eines Sensors nie durch den nächsten Poll
+    // abgeschnitten – das war die Ursache, warum 2 Sensoren gleichzeitig
+    // nicht funktionierten (einzeln dagegen schon).
     if ((now - lastPollMs) >= SPORT_POLL_MS) {
         lastPollMs = now;
 
-        // 0x7E + Physical-ID senden → Sensor antwortet mit DATA_FRAME
-        sportSerial.write(SPORT_START_BYTE);
-        sportSerial.write(config.sport_poll_id[pollSensor]);
+        // Nächsten Sensor wählen (nur aktive)
+        pollSensor = (pollSensor + 1) % activeSensors;
 
-        // State-Machine auf Empfang der Antwort vorbereiten
-        rxState   = WAIT_PHYSID;
+        // 0x7E + Physical-ID senden → Sensor antwortet mit DATA_FRAME
+        sportSerialPtr->write(SPORT_START_BYTE);
+        sportSerialPtr->write(config.sport_poll_id[pollSensor]);
+
+        // State-Machine für die erwartete Antwort vorbereiten
+        rxState   = WAIT_START;
         rxIdx     = 0;
         rxStuffed = false;
-
-        // Nächsten Sensor für nächsten Poll-Zyklus
-        pollSensor = (pollSensor + 1) % SPORT_NUM_SENSORS;
     }
 }
 

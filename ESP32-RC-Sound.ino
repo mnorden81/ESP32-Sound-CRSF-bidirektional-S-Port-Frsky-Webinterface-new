@@ -1,5 +1,5 @@
 /*
-   ESP32-RC-Sound  v1.22
+   ESP32-RC-Sound  v1.23
    PiperPilot
 
    Vereint V1, V2, V3 und V4 in einem Programm.
@@ -42,7 +42,7 @@
 #include "WebServerManager.h"
 #include "sport_lipo.h"
 
-uint16_t Version = 122;
+uint16_t Version = 123;
 char versionString[6];
 
 // ── Zustand ───────────────────────────────────────────────────────────
@@ -299,7 +299,7 @@ static void crsfSendParam(uint8_t idx) {
             {1,2,16,22,28,34,40,46,52,58,64,74});
     }
     else if(idx==1) {
-        snprintf(buf,sizeof(buf),"v1.22 %s",hwVersionStr());
+        snprintf(buf,sizeof(buf),"v1.23 %s",hwVersionStr());
         crsf.send_param_response_CRSF_INFO(1,0,"Version",buf);
     }
 
@@ -452,7 +452,9 @@ static void crsfWriteParam(uint8_t idx, uint8_t val) {
     else if(idx==67){config.Einkanal_Channel=(val==255)?999:constrain(val,0,15);markDirty();}
     else if(idx==68){config.Einkanal_mode=(val==0)?0:constrain((int)val+9,10,13);markDirty();}
     else if(idx==71){config.Hardware_Config=constrain(val,0,3);markDirty();
-                     Serial.printf("Hardware Config -> %d (Neustart noetig)\n",config.Hardware_Config);}
+                     Serial.printf("!!! Hardware Config -> %d – NEUSTART ERFORDERLICH !!!\n",config.Hardware_Config);
+                     // sportLipoInit() wird erst nach dem Neustart in setup() aufgerufen
+                     }
     else if(idx==72){config.PWM_scale_min=constrain((int)val*16,0,4080);markDirty();}
     else if(idx==73){config.PWM_scale_max=constrain((int)val*16,0,4080);markDirty();}
 }
@@ -511,7 +513,9 @@ void setup() {
         sportLipoInit();
     }
 
-    Serial.printf("ESP32-RC-Sound v1.22 – Hardware: %s\n", hwVersionStr());
+    Serial.printf("ESP32-RC-Sound v1.23 – Hardware: %s\n", hwVersionStr());
+    Serial.println(">>> BUILD-MARKER: SPORT-DIAG-B7 <<<");
+    Serial.println(">>> Wenn du diese Zeile siehst, laeuft der aktuelle Build! <<<");
 }
 
 // ======== Loop =======================================================
@@ -519,15 +523,25 @@ void loop() {
     currentTime = millis();
     if (!digitalRead(WifiPin)) WebServerManager::Webpage();
 
+    // V4: S.Port Polling unabhaengig vom RC-System (SBUS und CRSF)
+    if (config.Hardware_Config == 3) {
+        sportLipoUpdate();
+    }
+
+    // Heartbeat: jede Sekunde Status ausgeben (zeigt ob loop laeuft + V4-Zustand)
+    static unsigned long lastHeartbeat = 0;
+    if (millis() - lastHeartbeat >= 1000) {
+        lastHeartbeat = millis();
+        Serial.printf("[HEARTBEAT] HW_Config=%d  RC_System=%d  Pack1.online=%d  Pack2.online=%d\n",
+                      config.Hardware_Config, Einkanal_RC_System_boot,
+                      lipoSensor[0].online, lipoSensor[1].online);
+    }
+
     if (Einkanal_RC_System_boot == 4) {
         crsf.read_packets(0);
         for (int i=0;i<16;i++) channel_output[i]=crsf.get_crfs_channels(i);
         if(channel_output[0]>0){BUS_OK=true;lastCrsfPacket=millis();}
         checkCrsfTimeout();
-        // S.Port Update (V4) und Telemetrie
-        if (config.Hardware_Config == 3) {
-            sportLipoUpdate();
-        }
 
         static unsigned long lastTelem = 0;
         if (millis() - lastTelem >= 100) {
