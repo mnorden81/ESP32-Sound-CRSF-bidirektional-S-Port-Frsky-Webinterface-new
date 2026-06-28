@@ -1,4 +1,4 @@
-# ESP32-RC-Sound v1.22
+# ESP32-RC-Sound v1.23
 
 **Autor:** PiperPilot
 
@@ -16,6 +16,18 @@ ESP32-basiertes RC-Soundmodul mit I2S-Audioausgabe, SD-Karten-Wiedergabe, WLAN-W
 - Alle vier Hardware-Versionen (V1, V2, V3, V4) in einem Firmware-Image
 - CRSF-Parametersystem (75 Parameter, vollständige Konfiguration über TBS Agent)
 - LiPo-Telemetrie über FrSky S.Port (Hardware V4)
+
+---
+
+## Neu in v1.23 (gegenüber v1.22)
+
+- **S.Port-Empfangslogik korrigiert** – die Sensorantwort folgt direkt auf die Poll-ID (kein zweites Start-Byte); die State-Machine wurde entsprechend umgebaut
+- **Cells-Dekodierung im FrSky/FLVSS-Format** (pawelsky-kompatibel): Einzelzellen werden korrekt aus dem 32-Bit-Datenwort dekodiert
+- **Sensor-Zuordnung über die Poll-ID** – Pack 1 (0xA1) und Pack 2 (0x22) werden zuverlässig getrennt erfasst
+- **Stabile Online-Erkennung** – gemeinsame Zeitbasis im Timeout-Check verhindert sporadisches Flackern der Sensoren
+- **Einzelzellen-Telemetrie über CRSF-Voltages (0x0E)** – erscheinen in EdgeTX/OpenTX als „Cels"-Sensoren (ein Sensor je Pack)
+- **Kein eigener Batterie-Frame mehr** – RxBt bleibt dadurch die vom Empfänger selbst gemessene Spannung und wird nicht mehr von der LiPo-Summe überschrieben
+- **Verdrahtung:** 4,7-kΩ-Pull-Widerstand zwischen S.Port-Signal und GND dokumentiert (für stabile Telemetrie erforderlich)
 
 ---
 
@@ -78,6 +90,8 @@ ESP32-basiertes RC-Soundmodul mit I2S-Audioausgabe, SD-Karten-Wiedergabe, WLAN-W
 | 33 | S.Port TX |
 
 > **Schaltung V4:** GPIO33 → Anode → [1N4148] → Kathode → S.Port Signal ← GPIO32
+>
+> Zusätzlich: **4,7 kΩ** zwischen S.Port-Signal und GND (Pull-Widerstand, hält die Leitung im Ruhezustand auf definiertem Pegel – für stabile Telemetrie erforderlich). Bei zwei Sensoren am selben Bus genügt ein Widerstand.
 
 ---
 

@@ -514,8 +514,6 @@ void setup() {
     }
 
     Serial.printf("ESP32-RC-Sound v1.23 – Hardware: %s\n", hwVersionStr());
-    Serial.println(">>> BUILD-MARKER: SPORT-DIAG-B7 <<<");
-    Serial.println(">>> Wenn du diese Zeile siehst, laeuft der aktuelle Build! <<<");
 }
 
 // ======== Loop =======================================================
@@ -526,15 +524,6 @@ void loop() {
     // V4: S.Port Polling unabhaengig vom RC-System (SBUS und CRSF)
     if (config.Hardware_Config == 3) {
         sportLipoUpdate();
-    }
-
-    // Heartbeat: jede Sekunde Status ausgeben (zeigt ob loop laeuft + V4-Zustand)
-    static unsigned long lastHeartbeat = 0;
-    if (millis() - lastHeartbeat >= 1000) {
-        lastHeartbeat = millis();
-        Serial.printf("[HEARTBEAT] HW_Config=%d  RC_System=%d  Pack1.online=%d  Pack2.online=%d\n",
-                      config.Hardware_Config, Einkanal_RC_System_boot,
-                      lipoSensor[0].online, lipoSensor[1].online);
     }
 
     if (Einkanal_RC_System_boot == 4) {
@@ -548,28 +537,14 @@ void loop() {
             lastTelem = millis();
 
             if (config.Hardware_Config == 3) {
-                // ── V4: Telemetrie nur senden wenn mindestens ein Sensor online ──
-                bool anyOnline = lipoSensor[0].online || lipoSensor[1].online;
-                if (anyOnline) {
-                    // Gesamtspannung + SoC aus niedrigster Einzelzelle
-                    float   totalV   = sportGetTotalVoltage();
-                    float   minCell  = sportGetMinCell();
-                    uint8_t soc      = sportCalcSoC(minCell);
-                    uint16_t voltCrsf = (uint16_t)(totalV * 10.0f + 0.5f);
-                    crsf.send_tele_Battery_Sensor(voltCrsf, 0, 0, soc);
-
-                    // Einzelzellen Pack 1
-                    if (lipoSensor[0].online) sportSendCellsTelemetry(0);
-                    // Einzelzellen Pack 2
-                    if (lipoSensor[1].online) sportSendCellsTelemetry(1);
-                }
-                // Kein Sensor online → keine Telemetrie senden
-            } else {
-                // V1/V2/V3: wie bisher, kein LiPo-Sensor
-                // Keine Telemetrie senden (war vorher Dummy 0,0,0,100)
-                // Nur senden wenn CRSF aktiv, als Keep-Alive
-                crsf.send_tele_Battery_Sensor(0, 0, 0, 0);
+                // ── V4: Nur Einzelzellen-Telemetrie (0x0E) senden. ──
+                // KEIN Batterie-Frame (0x08): dadurch bleibt RxBt die vom
+                // Empfaenger (HR8E) selbst gemessene Spannung. Die LiPo-Daten
+                // kommen sauber ueber die beiden Cels-Sensoren.
+                if (lipoSensor[0].online) sportSendCellsTelemetry(0);
+                if (lipoSensor[1].online) sportSendCellsTelemetry(1);
             }
+            // V1/V2/V3: keine eigene Telemetrie senden – Empfaenger liefert RxBt.
         }
         if(crsf.getDeviceInfoReplyPending()){
             crsf.setDeviceInfoReplyPending(false);

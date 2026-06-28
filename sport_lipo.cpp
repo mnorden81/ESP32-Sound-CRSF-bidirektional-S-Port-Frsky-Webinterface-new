@@ -242,8 +242,8 @@ void sportLipoUpdate() {
     unsigned long now = millis();
     sportNow = now;   // gemeinsame Zeitbasis fuer sportProcessByte() (lastUpdateMs)
 
-    // GARANTIERTE LEBENSZEICHEN-AUSGABE: beweist, dass diese Funktion laeuft.
-    // Nicht an sportSerialPtr o.ae. gekoppelt. Zaehlt Aufrufe pro Sekunde.
+#if SPORT_DEBUG_RAW
+    // Diagnose-Lebenszeichen: zaehlt Aufrufe pro Sekunde (nur im Debug-Build).
     static unsigned long lastAlive = 0;
     static uint32_t      callCount = 0;
     callCount++;
@@ -255,6 +255,7 @@ void sportLipoUpdate() {
                       (unsigned long)callCount, ptrOk, (unsigned long)avail);
         callCount = 0;
     }
+#endif
 
 #if SPORT_DEBUG_RAW
     static unsigned long lastDbg = 0;
@@ -294,7 +295,9 @@ void sportLipoUpdate() {
             lipoSensor[i].cellCount  = 0;
             lipoSensor[i].totalVoltage = 0.0f;
             lipoSensor[i].minCell    = 0.0f;
+#if SPORT_DEBUG_RAW
             Serial.printf("[S.Port] Sensor %d offline\n", i + 1);
+#endif
         }
     }
 

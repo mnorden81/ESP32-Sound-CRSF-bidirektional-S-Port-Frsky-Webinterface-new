@@ -69,9 +69,10 @@
 #define SPORT_TIMEOUT_MS   2000     // Sensor offline nach dieser Zeit ohne Paket
 
 // ── Diagnose ──────────────────────────────────────────────────────────
-// SPORT_DEBUG_RAW = 1 : jede Sekunde RX-Byte-Zähler + Hexdump auf Serial.
-// Zum Debuggen aktiv. Für Normalbetrieb auf 0 setzen.
-#define SPORT_DEBUG_RAW    1
+// SPORT_DEBUG_RAW = 1 : jede Sekunde RX-Byte-Zähler + Hexdump auf Serial,
+// zusaetzlich [CELL]-, [S.Port LIVE]- und Sensor-Offline-Meldungen.
+// Fuer Normalbetrieb auf 0. Zum Debuggen auf 1 setzen.
+#define SPORT_DEBUG_RAW    0
 
 // SPORT_DEBUG_PROBE = 1 : Diagnose-Sweep (deaktiviert, war fehlerhaft).
 #define SPORT_DEBUG_PROBE  0
