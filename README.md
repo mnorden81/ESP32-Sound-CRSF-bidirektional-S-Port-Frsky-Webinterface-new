@@ -1,4 +1,4 @@
-# ESP32-RC-Sound v1.23
+# ESP32-RC-Sound v1.24
 
 **Autor:** PiperPilot
 
@@ -19,7 +19,10 @@ ESP32-basiertes RC-Soundmodul mit I2S-Audioausgabe, SD-Karten-Wiedergabe, WLAN-W
 
 ---
 
-## Neu in v1.23 (gegenüber v1.22)
+## Neu in v1.24 (gegenüber v1.23)
+
+- **CRSF-Command-Helper korrigiert** – `send_command()` ist jetzt als Member implementiert und sendet den Frame konsistent
+- **Versionsangaben vereinheitlicht** – Firmware, Weboberfläche und Konfigurationskommentare stehen auf v1.24
 
 - **S.Port-Empfangslogik korrigiert** – die Sensorantwort folgt direkt auf die Poll-ID (kein zweites Start-Byte); die State-Machine wurde entsprechend umgebaut
 - **Cells-Dekodierung im FrSky/FLVSS-Format** (pawelsky-kompatibel): Einzelzellen werden korrekt aus dem 32-Bit-Datenwort dekodiert
@@ -167,3 +170,4 @@ ESP32-basiertes RC-Soundmodul mit I2S-Audioausgabe, SD-Karten-Wiedergabe, WLAN-W
 | v0.70 | V1/V2/V3 vereint, CRSF-Parametersystem (75 Parameter) |
 | v0.84 | Hardware V4, S.Port LiPo-Telemetrie, Einzelzellen-SoC |
 | v1.22 | Weboberfläche als PROGMEM (Flash), ~60 KB RAM-Ersparnis pro Request, Dark-Mode-UI |
+| v1.24 | Versionspflege, CRSF-Command-Helper korrigiert, Dokumentation aktualisiert |

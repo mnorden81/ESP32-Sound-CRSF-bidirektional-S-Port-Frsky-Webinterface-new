@@ -1,4 +1,4 @@
-// WebServerManager.cpp  –  ESP32-RC-Sound v1.22
+// WebServerManager.cpp  –  ESP32-RC-Sound v1.24
 // Teil 2: HTML als PROGMEM, API-Endpunkte aus v1.00 übernommen
 // buildPage() entfernt → 60 KB weniger RAM-Allokation pro Request
 #include "WebServerManager.h"

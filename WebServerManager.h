@@ -1,4 +1,4 @@
-// WebServerManager.h  –  ESP32-RC-Sound v1.22
+// WebServerManager.h  –  ESP32-RC-Sound v1.24
 #pragma once
 #include <WiFi.h>
 #include <WebServer.h>

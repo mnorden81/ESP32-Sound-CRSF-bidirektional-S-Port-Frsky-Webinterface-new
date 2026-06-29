@@ -1,5 +1,5 @@
 /*
- * sport_lipo.cpp  –  ESP32-RC-Sound v1.23  (Hardware V4)
+ * sport_lipo.cpp  –  ESP32-RC-Sound v1.24  (Hardware V4)
  *
  * S.Port Master: ESP32 pollt FrSky FLVSS/MLVSS Sensoren und parst
  * Einzelzell-Spannungen. Automatische Erkennung der Zellanzahl (1–6S).

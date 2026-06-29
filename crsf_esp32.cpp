@@ -995,30 +995,28 @@ void CRSF::read_param(uint8_t parameter_number, uint8_t parameter_chunk_number){
 #endif     
 }
 
-void send_command(uint8_t command_id, std::initializer_list<uint8_t> payload) {   
+void CRSF::send_command(uint8_t command_id, std::initializer_list<uint8_t> payload) {
 
     uint8_t len_payload = payload.size();
 
-    uint8_t len = 5 + len_payload;
-    uint8_t packet[64];
+    uint8_t len = 6 + len_payload;
+    uint8_t packet[64] = {};
     packet[0] = CRSF_SYNC_byte;   // sync
     packet[1] = len;    // len
     packet[2] = CRSF_FRAMETYPE_COMMAND;   // type
-    packet[3] = CRSF_ADDRESS_FLIGHT_CONTROLLER; 
+    packet[3] = CRSF_ADDRESS_FLIGHT_CONTROLLER;
     packet[4] = CRSF_ADDRESS_RADIO_TRANSMITTER;
     packet[5] = command_id; // Command ID
 
-   // List_of_payload
-    int packet_count = 6;
+    uint8_t pos = 6;
     for (uint8_t c : payload) {
-        packet[packet_count] = c; 
-        packet_count ++;
+        packet[pos++] = c;
     }
-    
-    //packet[packet_count + len_name] = 0xFF;        // children Liste mit 0xFF abschließen
-    packet[5 + len_payload] = crc8_ba(&packet[2], packet[1] - 1);        // children Liste mit 0xFF abschließen ????
-    
-    packet[packet[1]+1] = crc8(&packet[2], packet[1] - 1);
+
+    packet[pos] = crc8_ba(&packet[2], pos - 2);
+    packet[packet[1] + 1] = crc8(&packet[2], packet[1] - 1);
+
+    send_packets(packet, len + 2 , 0);
 
 #if DEBUG_CRSF_SEND
     Serial.println("📤 Command send");

@@ -2,7 +2,7 @@
 #define SPORT_LIPO_H
 
 /*
- * sport_lipo.h  –  ESP32-RC-Sound v1.23  (Hardware V4)
+ * sport_lipo.h  –  ESP32-RC-Sound v1.24  (Hardware V4)
  *
  * S.Port Master-Polling fuer bis zu 2 FrSky FLVSS/MLVSS LiPo-Sensoren.
  * Der ESP32 übernimmt die Rolle des S.Port-Masters und pollt die Sensoren

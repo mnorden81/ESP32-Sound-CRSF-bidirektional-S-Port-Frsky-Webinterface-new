@@ -1,5 +1,5 @@
 /*
-   ESP32-RC-Sound  v1.23
+    ESP32-RC-Sound  v1.24
    PiperPilot
 
    Vereint V1, V2, V3 und V4 in einem Programm.
@@ -42,7 +42,7 @@
 #include "WebServerManager.h"
 #include "sport_lipo.h"
 
-uint16_t Version = 123;
+uint16_t Version = 124;
 char versionString[6];
 
 // ── Zustand ───────────────────────────────────────────────────────────
@@ -299,7 +299,7 @@ static void crsfSendParam(uint8_t idx) {
             {1,2,16,22,28,34,40,46,52,58,64,74});
     }
     else if(idx==1) {
-        snprintf(buf,sizeof(buf),"v1.23 %s",hwVersionStr());
+        snprintf(buf,sizeof(buf),"v1.24 %s",hwVersionStr());
         crsf.send_param_response_CRSF_INFO(1,0,"Version",buf);
     }
 
@@ -513,7 +513,7 @@ void setup() {
         sportLipoInit();
     }
 
-    Serial.printf("ESP32-RC-Sound v1.23 – Hardware: %s\n", hwVersionStr());
+    Serial.printf("ESP32-RC-Sound v1.24 – Hardware: %s\n", hwVersionStr());
 }
 
 // ======== Loop =======================================================

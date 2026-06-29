@@ -1,5 +1,5 @@
 /*
- * config.cpp  -  ESP32-RC-Sound v1.22
+ * config.cpp  -  ESP32-RC-Sound v1.24
  */
 
 #include "config.h"
