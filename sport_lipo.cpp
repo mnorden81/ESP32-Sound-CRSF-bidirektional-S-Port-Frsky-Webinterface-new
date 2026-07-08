@@ -239,6 +239,11 @@ void sportLipoInit() {
 
 // ── Update (non-blocking, in loop() aufrufen) ─────────────────────────
 void sportLipoUpdate() {
+    // Schutz: Wird Hardware_Config zur Laufzeit auf V4 gestellt (per Web/API), ist
+    // die S.Port-UART noch nicht initialisiert (sportLipoInit() laeuft nur in setup()).
+    // Ohne diesen Check gaebe es einen Null-Pointer-Zugriff (Guru Meditation).
+    // S.Port arbeitet dann erst nach einem Neustart – der Crash bleibt aber aus.
+    if (sportSerialPtr == nullptr) return;
     unsigned long now = millis();
     sportNow = now;   // gemeinsame Zeitbasis fuer sportProcessByte() (lastUpdateMs)
 

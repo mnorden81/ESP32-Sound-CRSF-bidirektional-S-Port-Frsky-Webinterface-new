@@ -62,6 +62,10 @@ public:
     uint8_t getParamWriteIndex() const { return paramWriteIndex; }
     uint8_t getParamWriteValue() const { return paramWriteValue; }
     uint8_t getParamReadSource() const { return paramReadSource; }
+    // Eigene CRSF-Geraeteadresse (0xC0..0xCF, abgeleitet aus der WM-Adresse)
+    void          setDeviceAddress(uint8_t a) { deviceAddress = a; }
+    uint8_t       getDeviceAddress() const { return deviceAddress; }
+    unsigned long getPingTime()      const { return pingReceivedTime; }
     void addTxEcho(uint16_t n) { txEchoBytes += n; }
 
     void setDeviceInfoReplyPending(int newValue);
@@ -92,6 +96,8 @@ private:
     uint8_t paramWriteIndex = 0;   // Zu schreibender Parameter-Index
     uint8_t paramWriteValue = 0;   // Zu schreibender Wert
     uint8_t paramReadSource  = 0xEF; // Source des PARAMETER_READ -> Destination der Antwort
+    uint8_t deviceAddress = CRSF_ADDRESS_FLIGHT_CONTROLLER; // eigene CRSF-Adresse (0xC0..0xCF aus WM-Adresse; Default 0xC8)
+    unsigned long pingReceivedTime = 0; // Zeitpunkt des letzten Broadcast-Ping (fuer Slot-Delay)
     uint16_t channels[CRSF_MAX_CHANNELS];
 };
 

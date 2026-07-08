@@ -8,7 +8,6 @@
  *   0 = V1  GPIO-Pins {22, 0, 2, 4}  – BUS + PWM + Pin + Einkanal
  *   1 = V2  GPIO-Pins {14,27,32,33}  – BUS + PWM + Pin + Einkanal
  *   2 = V3  Kein GPIO-Eingang        – nur BUS + Einkanal
- *   3 = V4  V3 + S.Port LiPo-Telemetrie
  */
 
 #include <Arduino.h>

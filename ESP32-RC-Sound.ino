@@ -1,5 +1,5 @@
 /*
-    ESP32-RC-Sound  v1.24
+   ESP32-RC-Sound  v1.24
    PiperPilot
 
    Vereint V1, V2, V3 und V4 in einem Programm.
@@ -42,7 +42,7 @@
 #include "WebServerManager.h"
 #include "sport_lipo.h"
 
-uint16_t Version = 124;
+uint16_t Version = 123;
 char versionString[6];
 
 // ── Zustand ───────────────────────────────────────────────────────────
@@ -180,7 +180,17 @@ static void crsfWriteParam(uint8_t idx, uint8_t val);
 //   72:U8 PWM min(/16)  73:U8 PWM max(/16)
 //  74: Info Gerätename
 
-static constexpr uint8_t CRSF_PARAM_COUNT = 73;
+static constexpr uint8_t CRSF_PARAM_COUNT = 72;   // Field-IDs jetzt luECKENLOS 1..72 (Luecke 69/70 geschlossen)
+
+// ── CRSF-Geraeteadresse + Ping-Slot aus der WM-Adresse (Wilhelm-Meier-Schema) ──
+// Jedes Modul bekommt eine eindeutige CRSF-Bus-Adresse aus 0xC0..0xCF.
+// Adresse   = 0xC0 + WM-Adresse         (WM 0 -> 0xC0, WM 2 -> 0xC2, ...)
+// Slot-Nr   = (Adresse - 0xC0) * 2 = WM-Adresse * 2   (Wilhelm Meiers Formel)
+// Die Ping-Antwort/Telemetrie wird erst im eigenen Zeit-Slot gesendet, damit
+// sich die Antworten mehrerer Module am selben Empfaenger nicht ueberlappen.
+#define CRSF_SLOT_MS 5   // Dauer pro Slot-Einheit (ms): Soundmodul (WM2=Slot4) antwortet 20ms versetzt zum Multiswitch (WM0=Slot0)
+static inline uint8_t  crsfAddrFromWM()  { return 0xC0 + (uint8_t)constrain(config.modul_adress, 0, 15); }
+static inline uint16_t crsfSlotDelayMs() { return (uint16_t)((uint8_t)constrain(config.modul_adress, 0, 15) * 2) * CRSF_SLOT_MS; }
 
 // ── Typ-Mapping Quelle Motor/Sound EIN ───────────────────────────────
 // Typ: 0=BUS-L(0-15) 1=BUS-H(20-35) 2=PWM-L(40-45) 3=PWM-H(50-55)
@@ -296,7 +306,7 @@ static void crsfSendParam(uint8_t idx) {
 
     if(idx==0) {
         crsf.send_param_response_CRSF_FOLDER(0,0,"",
-            {1,2,16,22,28,34,40,46,52,58,64,74});
+            {1,2,16,22,28,34,40,46,52,58,64,72});
     }
     else if(idx==1) {
         snprintf(buf,sizeof(buf),"v1.24 %s",hwVersionStr());
@@ -384,7 +394,7 @@ static void crsfSendParam(uint8_t idx) {
 
     // ── Einstellungen (64..73) ────────────────────────────────────────
     else if(idx==64) crsf.send_param_response_CRSF_FOLDER(64,0,"Einstellungen",
-        {65,66,67,68,71,72,73});
+        {65,66,67,68,69,70,71});
     else if(idx==65) crsf.send_param_response_CRSF_TEXT_SELECTION(65,64,
         "RC-System","FrSky;FlySky;ELRS SBUS;Hott;ELRS CRSF",
         (uint8_t)constrain(config.Einkanal_RC_System,0,4),0,4);
@@ -404,18 +414,18 @@ static void crsfSendParam(uint8_t idx) {
     }
 
 
-    else if(idx==71) crsf.send_param_response_CRSF_TEXT_SELECTION(71,64,
+    else if(idx==69) crsf.send_param_response_CRSF_TEXT_SELECTION(69,64,
         "Hardware Config","V1;V2;V3;V4",
         (uint8_t)constrain(config.Hardware_Config,0,3),0,3);
-    else if(idx==72) crsf.send_param_response_CRSF_UINT8(72,64,"PWM min (/16 us)",
+    else if(idx==70) crsf.send_param_response_CRSF_UINT8(70,64,"PWM min (/16 us)",
         (uint8_t)(constrain(config.PWM_scale_min,0,4080)/16),0,255,"");
-    else if(idx==73) crsf.send_param_response_CRSF_UINT8(73,64,"PWM max (/16 us)",
+    else if(idx==71) crsf.send_param_response_CRSF_UINT8(71,64,"PWM max (/16 us)",
         (uint8_t)(constrain(config.PWM_scale_max,0,4080)/16),0,255,"");
 
-    // ── Gerätename (74) ───────────────────────────────────────────────
-    else if(idx==74) {
+    // ── Gerätename (72) ───────────────────────────────────────────────
+    else if(idx==72) {
         snprintf(buf,sizeof(buf),"%s (Web aendern)",config.Device_Name);
-        crsf.send_param_response_CRSF_INFO(74,0,"Geraetename",buf);
+        crsf.send_param_response_CRSF_INFO(72,0,"Geraetename",buf);
     }
 }
 
@@ -448,15 +458,15 @@ static void crsfWriteParam(uint8_t idx, uint8_t val) {
         else if(sub==5){if(val==1)Sound_on_web[s]=true;testSoundActive[s]=(val==1);}
     }
     else if(idx==65){config.Einkanal_RC_System=constrain(val,0,4);markDirty();}
-    else if(idx==66){config.modul_adress=constrain(val,0,20);markDirty();}
+    else if(idx==66){config.modul_adress=constrain(val,0,20);crsf.setDeviceAddress(crsfAddrFromWM());markDirty();}
     else if(idx==67){config.Einkanal_Channel=(val==255)?999:constrain(val,0,15);markDirty();}
     else if(idx==68){config.Einkanal_mode=(val==0)?0:constrain((int)val+9,10,13);markDirty();}
-    else if(idx==71){config.Hardware_Config=constrain(val,0,3);markDirty();
+    else if(idx==69){config.Hardware_Config=constrain(val,0,3);markDirty();
                      Serial.printf("!!! Hardware Config -> %d – NEUSTART ERFORDERLICH !!!\n",config.Hardware_Config);
                      // sportLipoInit() wird erst nach dem Neustart in setup() aufgerufen
                      }
-    else if(idx==72){config.PWM_scale_min=constrain((int)val*16,0,4080);markDirty();}
-    else if(idx==73){config.PWM_scale_max=constrain((int)val*16,0,4080);markDirty();}
+    else if(idx==70){config.PWM_scale_min=constrain((int)val*16,0,4080);markDirty();}
+    else if(idx==71){config.PWM_scale_max=constrain((int)val*16,0,4080);markDirty();}
 }
 
 // ======== Setup ======================================================
@@ -470,7 +480,9 @@ void setup() {
     // CRSF oder SBUS starten
     if (config.Einkanal_RC_System == 4) {
         crsf.init_crsf(&Serial2, 16, 17);
-        Serial.println("CRSF (RX=16, TX=17)");
+        crsf.setDeviceAddress(crsfAddrFromWM());   // eindeutige CRSF-Adresse aus WM-Adresse
+        Serial.printf("CRSF (RX=16, TX=17)  Geraeteadresse 0x%02X  Slot %d\n",
+                      crsfAddrFromWM(), (uint8_t)constrain(config.modul_adress,0,15) * 2);
     } else {
         sbus_rx.Begin();
         Serial.println("SBUS gestartet");
@@ -536,24 +548,27 @@ void loop() {
         if (millis() - lastTelem >= 100) {
             lastTelem = millis();
 
+            // Nur Einzelzellen-Telemetrie (0x0E) senden, wenn LiPo-Sensoren vorhanden.
+            // KEIN Batterie-Frame (0x08): dadurch bleibt RxBt die vom Empfaenger (HR8E)
+            // selbst gemessene Spannung und wird nicht mit 0 ueberschrieben.
+            // Das Modul erscheint im TBS Agent trotzdem, weil es auf jeden Ping mit
+            // device_info antwortet – die Geraete-Erkennung laeuft NICHT ueber Telemetrie.
             if (config.Hardware_Config == 3) {
-                // ── V4: Nur Einzelzellen-Telemetrie (0x0E) senden. ──
-                // KEIN Batterie-Frame (0x08): dadurch bleibt RxBt die vom
-                // Empfaenger (HR8E) selbst gemessene Spannung. Die LiPo-Daten
-                // kommen sauber ueber die beiden Cels-Sensoren.
                 if (lipoSensor[0].online) sportSendCellsTelemetry(0);
                 if (lipoSensor[1].online) sportSendCellsTelemetry(1);
             }
-            // V1/V2/V3: keine eigene Telemetrie senden – Empfaenger liefert RxBt.
         }
-        if(crsf.getDeviceInfoReplyPending()){
+        if(crsf.getDeviceInfoReplyPending() && (millis() - crsf.getPingTime() >= crsfSlotDelayMs())){
+            // Erst im eigenen Zeit-Slot auf den Broadcast-Ping antworten (Wilhelm-Meier-Schema),
+            // damit sich die Device-Info-Antworten mehrerer Module nicht ueberlappen.
             crsf.setDeviceInfoReplyPending(false);
             char dn[24]; snprintf(dn,sizeof(dn),"%s@%d",config.Device_Name,config.modul_adress);
             crsf.send_device_info(dn,CRSF_PARAM_COUNT);
         }
         if(crsf.getDeviceReadReplyPending()){
+            uint8_t pi=crsf.getParamReadIndex();
             crsf.setDeviceReadReplyPending(false);
-            crsfSendParam(crsf.getParamReadIndex());
+            crsfSendParam(pi);
         }
         if(crsf.getDeviceWriteReplyPending()){
             uint8_t wi=crsf.getParamWriteIndex(),wv=crsf.getParamWriteValue();

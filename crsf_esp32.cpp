@@ -242,9 +242,10 @@ void CRSF::crsfDataReceive() {
             break;
 
         case CRSF_FRAMETYPE_DEVICE_PING:
-            if (crfs_buffer[3] != CRSF_ADDRESS_FLIGHT_CONTROLLER &&
+            if (crfs_buffer[3] != deviceAddress &&
                 crfs_buffer[3] != CRSF_ADDRESS_BROADCAST) break;
             pingSource = crfs_buffer[4];  // Source des PING merken
+            pingReceivedTime = millis();  // Zeitpunkt fuer Slot-Delay (Antwort erst im eigenen Zeit-Slot)
             deviceInfoReplyPending = true; 
 #if DEBUG_CRSF_TYPE      
             Serial.print("📤 CRSF_FRAMETYPE_DEVICE_PING Destination: ");
@@ -274,7 +275,7 @@ void CRSF::crsfDataReceive() {
 
         case CRSF_FRAMETYPE_PARAMETER_READ:
             // Nur verarbeiten wenn wir die Zieladresse sind
-            if (crfs_buffer[3] != CRSF_ADDRESS_FLIGHT_CONTROLLER &&
+            if (crfs_buffer[3] != deviceAddress &&
                 crfs_buffer[3] != CRSF_ADDRESS_BROADCAST) break;
             paramReadSource = crfs_buffer[4];  // Source = Destination fuer Antwort
             paramReadIndex = crfs_buffer[5];  // angefragter Parameter
@@ -290,7 +291,7 @@ void CRSF::crsfDataReceive() {
             break; 
 
         case CRSF_FRAMETYPE_PARAMETER_WRITE:
-            if (crfs_buffer[3] != CRSF_ADDRESS_FLIGHT_CONTROLLER &&
+            if (crfs_buffer[3] != deviceAddress &&
                 crfs_buffer[3] != CRSF_ADDRESS_BROADCAST) break;
             paramWriteIndex = crfs_buffer[5];  // Parameter-Index
             paramWriteValue = crfs_buffer[6];  // Wert
@@ -461,7 +462,7 @@ void CRSF::send_device_info(const char* name, uint8_t parameter) {
     packet[1] = len;    // len
     packet[2] = CRSF_FRAMETYPE_DEVICE_INFO;   // type
     packet[3] = pingSource;                    // Antwort an PING-Absender
-    packet[4] = CRSF_ADDRESS_FLIGHT_CONTROLLER;
+    packet[4] = deviceAddress;
 
     strcpy((char*)&packet[5], name); // Name
     strcpy((char*)&packet[5 + len_name],"ELRS"); //always "ELRS" for ExpressLRS
@@ -501,7 +502,7 @@ void CRSF::send_param_response_CRSF_UINT8(uint8_t param_id, uint8_t parent, cons
     packet[1] = len;    // len
     packet[2] = CRSF_FRAMETYPE_PARAMETER_SETTINGS_ENTRY;   // type
     packet[3] = paramReadSource;                  // Antwort an Anfragesteller
-    packet[4] = CRSF_ADDRESS_FLIGHT_CONTROLLER;  // Wir als Geraet
+    packet[4] = deviceAddress;  // Wir als Geraet
     packet[5] = param_id; //config field index, parameter field 03
     packet[6] = 0x00; // chunks remaining, 0 chunks remaining after this one
     
@@ -544,7 +545,7 @@ void CRSF::send_param_response_CRSF_FLOAT(uint8_t param_id, uint8_t parent, cons
     packet[1] = len;    // len
     packet[2] = CRSF_FRAMETYPE_PARAMETER_SETTINGS_ENTRY;   // type
     packet[3] = paramReadSource;                  // Antwort an Anfragesteller
-    packet[4] = CRSF_ADDRESS_FLIGHT_CONTROLLER;  // Wir als Geraet
+    packet[4] = deviceAddress;  // Wir als Geraet
     packet[5] = param_id; //config field index, parameter field 03
     packet[6] = 0x00; // chunks remaining, 0 chunks remaining after this one
     
@@ -609,7 +610,7 @@ void CRSF::send_param_response_CRSF_TEXT_SELECTION(uint8_t param_id, uint8_t par
     packet[1] = len;    // len
     packet[2] = CRSF_FRAMETYPE_PARAMETER_SETTINGS_ENTRY;   // type
     packet[3] = paramReadSource;                  // Antwort an Anfragesteller
-    packet[4] = CRSF_ADDRESS_FLIGHT_CONTROLLER;  // Wir als Geraet
+    packet[4] = deviceAddress;  // Wir als Geraet
     packet[5] = param_id; //crfs_buffer[5]; //config field index, parameter field 03
     packet[6] = 0x00; // chunks remaining, 0 chunks remaining after this one
     
@@ -707,7 +708,7 @@ void CRSF::send_param_response_CRSF_TEXT_SELECTION(
         packet[1] = len;
         packet[2] = CRSF_FRAMETYPE_PARAMETER_SETTINGS_ENTRY;
         packet[3] = paramReadSource;                  // Antwort an Anfragesteller
-        packet[4] = CRSF_ADDRESS_FLIGHT_CONTROLLER;
+        packet[4] = deviceAddress;
         packet[5] = param_id;
         packet[6] = remaining;
 
@@ -739,7 +740,7 @@ void CRSF::send_param_response_CRSF_STRING(uint8_t param_id, uint8_t parent, con
     packet[1] = len;    // len
     packet[2] = CRSF_FRAMETYPE_PARAMETER_SETTINGS_ENTRY;   // type
     packet[3] = paramReadSource;                  // Antwort an Anfragesteller
-    packet[4] = CRSF_ADDRESS_FLIGHT_CONTROLLER;  // Wir als Geraet
+    packet[4] = deviceAddress;  // Wir als Geraet
     packet[5] = param_id; //config field index, parameter field 03
     packet[6] = 0x00; // chunks remaining, 0 chunks remaining after this one
     
@@ -773,7 +774,7 @@ void CRSF::send_param_response_CRSF_FOLDER(uint8_t param_id, uint8_t parent, con
     packet[1] = len;    // len
     packet[2] = CRSF_FRAMETYPE_PARAMETER_SETTINGS_ENTRY;   // type
     packet[3] = paramReadSource;                  // Antwort an Anfragesteller
-    packet[4] = CRSF_ADDRESS_FLIGHT_CONTROLLER;  // Wir als Geraet
+    packet[4] = deviceAddress;  // Wir als Geraet
     packet[5] = param_id; //config field index, parameter field 03
     packet[6] = 0x00; // chunks remaining, 0 chunks remaining after this one
     
@@ -814,7 +815,7 @@ void CRSF::send_param_response_CRSF_INFO(uint8_t param_id, uint8_t parent, const
     packet[1] = len;    // len
     packet[2] = CRSF_FRAMETYPE_PARAMETER_SETTINGS_ENTRY;   // type
     packet[3] = paramReadSource;                  // Antwort an Anfragesteller
-    packet[4] = CRSF_ADDRESS_FLIGHT_CONTROLLER;  // Wir als Geraet
+    packet[4] = deviceAddress;  // Wir als Geraet
     packet[5] = param_id; //config field index, parameter field 03
     packet[6] = 0x00; // chunks remaining, 0 chunks remaining after this one
     
@@ -995,28 +996,30 @@ void CRSF::read_param(uint8_t parameter_number, uint8_t parameter_chunk_number){
 #endif     
 }
 
-void CRSF::send_command(uint8_t command_id, std::initializer_list<uint8_t> payload) {
+void send_command(uint8_t command_id, std::initializer_list<uint8_t> payload) {   
 
     uint8_t len_payload = payload.size();
 
-    uint8_t len = 6 + len_payload;
-    uint8_t packet[64] = {};
+    uint8_t len = 5 + len_payload;
+    uint8_t packet[64];
     packet[0] = CRSF_SYNC_byte;   // sync
     packet[1] = len;    // len
     packet[2] = CRSF_FRAMETYPE_COMMAND;   // type
-    packet[3] = CRSF_ADDRESS_FLIGHT_CONTROLLER;
+    packet[3] = CRSF_ADDRESS_FLIGHT_CONTROLLER; 
     packet[4] = CRSF_ADDRESS_RADIO_TRANSMITTER;
     packet[5] = command_id; // Command ID
 
-    uint8_t pos = 6;
+   // List_of_payload
+    int packet_count = 6;
     for (uint8_t c : payload) {
-        packet[pos++] = c;
+        packet[packet_count] = c; 
+        packet_count ++;
     }
-
-    packet[pos] = crc8_ba(&packet[2], pos - 2);
-    packet[packet[1] + 1] = crc8(&packet[2], packet[1] - 1);
-
-    send_packets(packet, len + 2 , 0);
+    
+    //packet[packet_count + len_name] = 0xFF;        // children Liste mit 0xFF abschließen
+    packet[5 + len_payload] = crc8_ba(&packet[2], packet[1] - 1);        // children Liste mit 0xFF abschließen ????
+    
+    packet[packet[1]+1] = crc8(&packet[2], packet[1] - 1);
 
 #if DEBUG_CRSF_SEND
     Serial.println("📤 Command send");

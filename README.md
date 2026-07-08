@@ -14,15 +14,25 @@ ESP32-basiertes RC-Soundmodul mit I2S-Audioausgabe, SD-Karten-Wiedergabe, WLAN-W
 - Einkanal-Multiplexing (MultiSwitch-Protokoll, WM0–WM3)
 - Ebenenumschaltung (bis zu 7 Ebenen × 3 Gruppen)
 - Alle vier Hardware-Versionen (V1, V2, V3, V4) in einem Firmware-Image
-- CRSF-Parametersystem (75 Parameter, vollständige Konfiguration über TBS Agent)
+- CRSF-Parametersystem (72 Parameter, vollständige Konfiguration über TBS Agent / ELRS-Lua)
 - LiPo-Telemetrie über FrSky S.Port (Hardware V4)
 
 ---
 
 ## Neu in v1.24 (gegenüber v1.23)
 
-- **CRSF-Command-Helper korrigiert** – `send_command()` ist jetzt als Member implementiert und sendet den Frame konsistent
-- **Versionsangaben vereinheitlicht** – Firmware, Weboberfläche und Konfigurationskommentare stehen auf v1.24
+Diese Version macht die CRSF-Parametrierung (TBS Agent / ELRS-Lua) für den Betrieb **mehrerer Module am selben Empfänger** tauglich und behebt mehrere Fehler, die das Lua-Menü verhinderten:
+
+- **Eindeutige CRSF-Geräteadresse aus der WM-Adresse** – die Adresse wird als `0xC0 + WM-Adresse` abgeleitet (WM0→0xC0, WM2→0xC2 …). Dadurch kollidiert das Modul nicht mehr mit anderen CRSF-Geräten (z. B. einem Wilhelm-Meier-Multiswitch), die sich sonst alle als 0xC8 melden würden
+- **Ping-Answer-Slot nach Wilhelm-Meier-Schema** – die Antwort auf den Broadcast-Ping wird um einen aus der Adresse abgeleiteten Zeit-Slot verzögert (`Slot = (Adresse−0xC0)×2`, Dauer `CRSF_SLOT_MS`). So überlagern sich die Geräteantworten mehrerer Module nicht auf dem Downlink, und alle erscheinen getrennt im Agent
+- **Parameter-IDs lückenlos gemacht** – die frühere Lücke bei ID 69/70 ist geschlossen (obere Parameter von 71–74 auf 69–72 nachgerückt), `CRSF_PARAM_COUNT` korrekt auf 72. Der ELRS-Lua-Agent fragt **alle** Parameter der Reihe nach ab; eine Lücke ließ das Menü komplett abbrechen
+- **Absturz-Schutz beim Laufzeit-Wechsel der Hardware-Version** – wird Hardware_Config im Betrieb auf V4 gestellt, ohne dass S.Port initialisiert wurde, verhindert ein Null-Pointer-Check den Guru-Meditation-Absturz (S.Port arbeitet dann nach einem Neustart)
+- **Versionsnummern vereinheitlicht** – in v1.23 stand in einigen Datei-Headern (`config`, `WebServerManager`) noch „v1.22"; alle Dateien tragen jetzt konsistent v1.24
+- **Hinweis:** Beim Betrieb mehrerer Module müssen diese unterschiedliche WM-Adressen haben, und der Empfänger muss Nicht-0xC8-Adressen weiterleiten (ExpressLRS ab Version 4.x kann das)
+
+---
+
+## Neu in v1.23 (gegenüber v1.22)
 
 - **S.Port-Empfangslogik korrigiert** – die Sensorantwort folgt direkt auf die Poll-ID (kein zweites Start-Byte); die State-Machine wurde entsprechend umgebaut
 - **Cells-Dekodierung im FrSky/FLVSS-Format** (pawelsky-kompatibel): Einzelzellen werden korrekt aus dem 32-Bit-Datenwort dekodiert
@@ -170,4 +180,3 @@ ESP32-basiertes RC-Soundmodul mit I2S-Audioausgabe, SD-Karten-Wiedergabe, WLAN-W
 | v0.70 | V1/V2/V3 vereint, CRSF-Parametersystem (75 Parameter) |
 | v0.84 | Hardware V4, S.Port LiPo-Telemetrie, Einzelzellen-SoC |
 | v1.22 | Weboberfläche als PROGMEM (Flash), ~60 KB RAM-Ersparnis pro Request, Dark-Mode-UI |
-| v1.24 | Versionspflege, CRSF-Command-Helper korrigiert, Dokumentation aktualisiert |
