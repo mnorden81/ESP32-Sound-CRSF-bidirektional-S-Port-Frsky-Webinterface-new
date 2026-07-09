@@ -62,17 +62,17 @@ public:
     uint8_t getParamWriteIndex() const { return paramWriteIndex; }
     uint8_t getParamWriteValue() const { return paramWriteValue; }
     uint8_t getParamReadSource() const { return paramReadSource; }
-    // Eigene CRSF-Geraeteadresse (0xC0..0xCF, abgeleitet aus der WM-Adresse)
+    // Eigene CRSF-Geraeteadresse (0xC0..0xCF, abgeleitet aus der WM-Adresse) – uebernommen aus v1.24
     void          setDeviceAddress(uint8_t a) { deviceAddress = a; }
     uint8_t       getDeviceAddress() const { return deviceAddress; }
     unsigned long getPingTime()      const { return pingReceivedTime; }
     void addTxEcho(uint16_t n) { txEchoBytes += n; }
 
-    void setDeviceInfoReplyPending(int newValue);
-    void setDeviceEntryReplyPending(int newValue);
-    void setDeviceReadReplyPending(int newValue);
-    void setDeviceWriteReplyPending(int newValue);
-    void setDeviceCommandReplyPending(int newValue);
+    void setDeviceInfoReplyPending(bool newValue);
+    void setDeviceEntryReplyPending(bool newValue);
+    void setDeviceReadReplyPending(bool newValue);
+    void setDeviceWriteReplyPending(bool newValue);
+    void setDeviceCommandReplyPending(bool newValue);
 
     void set_crsf_channel(uint8_t ch, uint16_t value);
 
