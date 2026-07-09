@@ -42,7 +42,7 @@
 #include "WebServerManager.h"
 #include "sport_lipo.h"
 
-uint16_t Version = 123;
+uint16_t Version = 124;
 char versionString[6];
 
 // ── Zustand ───────────────────────────────────────────────────────────
