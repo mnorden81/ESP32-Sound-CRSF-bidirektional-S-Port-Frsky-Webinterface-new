@@ -1,65 +1,182 @@
-# ESP32-MultiSwitch v1.42
+# ESP32-RC-Sound v1.24
 
-RC-gesteuerter 8-Kanal-Schalter für ESP32 mit Web-Interface.
+**Autor:** PiperPilot
 
-## Änderungen v1.42 (übertragen aus Soundmodul v1.24)
-
-Diese Version macht das Multiswitch für den **Multi-Device-Betrieb** am selben Empfänger tauglich:
-
-- **Eindeutige CRSF-Geräteadresse** aus der Modul-Adresse (`0xC0 + modul_adress`) statt fest 0xC8 – dadurch kollidiert das Multiswitch nicht mehr mit anderen CRSF-Konfigurationsgeräten (z. B. dem Soundmodul), die sich sonst ebenfalls als 0xC8 melden
-- **Ping-Answer-Slot** (`Slot = (Adresse−0xC0)×2`, Verzögerung `Slot × CRSF_SLOT_MS`) – die device_info-Antwort wird im eigenen Zeit-Slot gesendet, sodass sich die Antworten mehrerer Module auf dem Downlink nicht überlagern
-- **Versionskonsistenz** auf `v1.42` (Firmware-Konstante, Web-UI-Header, README)
-
-*Nicht übertragen (in dieser Version nicht nötig):* RxBt-Korrektur (das Multiswitch sendet keinen Batterie-Frame), Parameter-Lücken-Fix (IDs 0–76 bereits lückenlos), S.Port-Absturz-Schutz (kein S.Port vorhanden).
-
-**Voraussetzung Multi-Device:** unterschiedliche Modul-Adressen je Gerät und ein Empfänger mit ExpressLRS ab Version 4.x.
+ESP32-basiertes RC-Soundmodul mit I2S-Audioausgabe, SD-Karten-Wiedergabe, WLAN-Weboberfläche, CRSF-Parametersystem und optionaler LiPo-Telemetrie über S.Port (Hardware V4).
 
 ---
 
-## Änderungen v1.41
+## Funktionsübersicht
 
-- **CRSF Parser-Fix**: Doppelschreiben des CRC-Bytes im RX-Parser entfernt
-- **CRSF Init-Fix**: `init_crsf()` verwendet nun den übergebenen Serial-Port
-- **CRSF API-Fix**: `send_command()` korrekt als Klassenmethode implementiert
-- **Web-API robuster**: JSON-Strings werden sicher escaped, Eingaben werden valider geparst/validiert
-- **NVS-Schreibschutz**: Konfigurationsänderungen werden gebündelt gespeichert (Debounce), Flush vor Neustart
-- **Versionskonsistenz**: Firmware, Web-UI und README auf `v1.41` vereinheitlicht
+- Motorklangsimulation (Start, Loop, Abschalten) mit drehzahlabhängiger Abspielgeschwindigkeit
+- 8 frei konfigurierbare Zusatzsounds (WAV-Dateien von SD-Karte)
+- Unterstützung für SBUS (FrSky, FlySky, ELRS SBUS, Hott) und CRSF/ELRS
+- Einkanal-Multiplexing (MultiSwitch-Protokoll, WM0–WM3)
+- Ebenenumschaltung (bis zu 7 Ebenen × 3 Gruppen)
+- Alle vier Hardware-Versionen (V1, V2, V3, V4) in einem Firmware-Image
+- CRSF-Parametersystem (72 Parameter, vollständige Konfiguration über TBS Agent / ELRS-Lua)
+- LiPo-Telemetrie über FrSky S.Port (Hardware V4)
+
+---
+
+## Neu in v1.24 (gegenüber v1.23)
+
+Diese Version macht die CRSF-Parametrierung (TBS Agent / ELRS-Lua) für den Betrieb **mehrerer Module am selben Empfänger** tauglich und behebt mehrere Fehler, die das Lua-Menü verhinderten:
+
+- **Eindeutige CRSF-Geräteadresse aus der WM-Adresse** – die Adresse wird als `0xC0 + WM-Adresse` abgeleitet (WM0→0xC0, WM2→0xC2 …). Dadurch kollidiert das Modul nicht mehr mit anderen CRSF-Geräten (z. B. einem Wilhelm-Meier-Multiswitch), die sich sonst alle als 0xC8 melden würden
+- **Ping-Answer-Slot nach Wilhelm-Meier-Schema** – die Antwort auf den Broadcast-Ping wird um einen aus der Adresse abgeleiteten Zeit-Slot verzögert (`Slot = (Adresse−0xC0)×2`, Dauer `CRSF_SLOT_MS`). So überlagern sich die Geräteantworten mehrerer Module nicht auf dem Downlink, und alle erscheinen getrennt im Agent
+- **Parameter-IDs lückenlos gemacht** – die frühere Lücke bei ID 69/70 ist geschlossen (obere Parameter von 71–74 auf 69–72 nachgerückt), `CRSF_PARAM_COUNT` korrekt auf 72. Der ELRS-Lua-Agent fragt **alle** Parameter der Reihe nach ab; eine Lücke ließ das Menü komplett abbrechen
+- **Absturz-Schutz beim Laufzeit-Wechsel der Hardware-Version** – wird Hardware_Config im Betrieb auf V4 gestellt, ohne dass S.Port initialisiert wurde, verhindert ein Null-Pointer-Check den Guru-Meditation-Absturz (S.Port arbeitet dann nach einem Neustart)
+- **Versionsnummern vereinheitlicht** – in v1.23 stand in einigen Datei-Headern (`config`, `WebServerManager`) noch „v1.22"; alle Dateien tragen jetzt konsistent v1.24
+- **Hinweis:** Beim Betrieb mehrerer Module müssen diese unterschiedliche WM-Adressen haben, und der Empfänger muss Nicht-0xC8-Adressen weiterleiten (ExpressLRS ab Version 4.x kann das)
+
+---
+
+## Neu in v1.23 (gegenüber v1.22)
+
+- **S.Port-Empfangslogik korrigiert** – die Sensorantwort folgt direkt auf die Poll-ID (kein zweites Start-Byte); die State-Machine wurde entsprechend umgebaut
+- **Cells-Dekodierung im FrSky/FLVSS-Format** (pawelsky-kompatibel): Einzelzellen werden korrekt aus dem 32-Bit-Datenwort dekodiert
+- **Sensor-Zuordnung über die Poll-ID** – Pack 1 (0xA1) und Pack 2 (0x22) werden zuverlässig getrennt erfasst
+- **Stabile Online-Erkennung** – gemeinsame Zeitbasis im Timeout-Check verhindert sporadisches Flackern der Sensoren
+- **Einzelzellen-Telemetrie über CRSF-Voltages (0x0E)** – erscheinen in EdgeTX/OpenTX als „Cels"-Sensoren (ein Sensor je Pack)
+- **Kein eigener Batterie-Frame mehr** – RxBt bleibt dadurch die vom Empfänger selbst gemessene Spannung und wird nicht mehr von der LiPo-Summe überschrieben
+- **Verdrahtung:** 4,7-kΩ-Pull-Widerstand zwischen S.Port-Signal und GND dokumentiert (für stabile Telemetrie erforderlich)
+
+---
+
+## Neu in v1.22 (gegenüber v0.84)
+
+- **Weboberfläche komplett neu** – vollständiges HTML/CSS/JS liegt als PROGMEM im Flash
+  - Kein RAM-Allokation mehr pro Request (zuvor ~60 KB RAM pro Seitenaufruf)
+  - `buildPage()` entfernt, `server.send_P()` streamt direkt aus dem Flash
+  - Modernes Dark-Mode-UI (GitHub-Farbschema)
+  - Responsive Design für Mobilgeräte
+- Stabilitätsverbesserungen bei häufigen Webzugriffen
+
+---
+
+## Hardware-Versionen
+
+| Version | GPIO-Pins (Eingänge) | Besonderheit |
+|---|---|---|
+| **V1** | 22, 0, 2, 4 | BUS + PWM-Eingang + GPIO-Pin + Einkanal |
+| **V2** | 14, 27, 32, 33 | BUS + PWM-Eingang + GPIO-Pin + Einkanal |
+| **V3** | – | Nur BUS-Kanal + Einkanal (SBUS/CRSF) |
+| **V4** | – | Wie V3 + S.Port LiPo-Telemetrie |
+
+---
 
 ## Pin-Belegung
 
+### Alle Versionen
+
 | GPIO | Funktion |
-|------|----------|
-| 13 | WiFi-Pin (LOW = AP aktiv) |
-| 16 | SBUS RX / CRSF RX |
+|---|---|
+| 13 | WiFi-Aktivierung (LOW = AP-Modus) |
+| 16 | CRSF RX / SBUS RX |
 | 17 | CRSF TX |
-| 18–27 | Ausgänge 1–8 |
-| 2 | Status-LED |
+| 05 | SD_CS |
+| 18 | SD_CLK |
+| 19 | SD_MISO |
+| 23 | SD_MOSI |
+| 21 | I2S_DOUT |
+| 25 | I2S_LRC |
+| 26 | I2S_BCLK |
+
+### V1 – zusätzliche Eingänge
+
+| GPIO | Funktion |
+|---|---|
+| 22, 0, 2, 4 | Input 3–6 (PWM/GPIO) |
+
+### V2 – zusätzliche Eingänge
+
+| GPIO | Funktion |
+|---|---|
+| 14, 27, 32, 33 | Input 3–6 (PWM/GPIO) |
+
+### V4 – S.Port LiPo (zusätzlich)
+
+| GPIO | Funktion |
+|---|---|
+| 32 | S.Port RX |
+| 33 | S.Port TX |
+
+> **Schaltung V4:** GPIO33 → Anode → [1N4148] → Kathode → S.Port Signal ← GPIO32
+>
+> Zusätzlich: **4,7 kΩ** zwischen S.Port-Signal und GND (Pull-Widerstand, hält die Leitung im Ruhezustand auf definiertem Pegel – für stabile Telemetrie erforderlich). Bei zwei Sensoren am selben Bus genügt ein Widerstand.
+
+---
+
+## Hardware-Voraussetzungen
+
+| Komponente | Beschreibung |
+|---|---|
+| ESP32 | Board-Version 3.3.8 |
+| SD-Karte | SPI-Anschluss |
+| I2S-DAC/Verstärker | z. B. MAX98357A |
+| RC-Empfänger | SBUS oder CRSF |
+| LiPo-BMS mit S.Port | Nur für Hardware V4 |
+
+---
+
+## SD-Karten-Dateien
+
+| Dateiname | Funktion |
+|---|---|
+| `loop.wav` | Motor-Laufgeräusch (Schleife) |
+| `start.wav` | Motorstart-Geräusch |
+| `shut.wav` | Motorabschalt-Geräusch |
+| `sound1.wav` – `sound8.wav` | Zusatzsounds 1–8 |
+
+---
 
 ## Bibliotheken
 
-- Bolder Flight Systems SBUS 8.1.4
-- CRSF_ESP32 (https://github.com/Ziege-One/CRSF_ESP32)
+| Bibliothek | Version |
+|---|---|
+| Bolder Flight Systems SBUS | 8.1.4 |
+| CRSF_ESP32 | https://github.com/Ziege-One/CRSF_ESP32 |
 
-## RC-System Werte
+---
 
-| Wert | System |
-|------|--------|
-| 0 | FrSky (SBUS) |
-| 1 | FlySky (SBUS) |
-| 2 | ELRS normiert (SBUS) |
-| 3 | HoTT (SBUS) |
-| 4 | CRSF (ELRS/TBS) |
+## Konfiguration
 
-## Web-Interface
+### Weboberfläche (alle Versionen)
+1. GPIO 13 auf LOW ziehen
+2. ESP32 startet als WLAN-Access-Point
+3. Mit dem konfigurierten Netzwerk verbinden
+4. Weboberfläche im Browser öffnen (modernes Dark-Mode-UI, mobilfreundlich)
+5. Einstellungen anpassen und speichern
 
-IP: `192.168.1.1` (Standard)  
-SSID: `MultiSwitch` / Passwort: `123456789`
+### TBS Agent / EdgeTX Lua (CRSF-Modus)
+- 75 CRSF-Parameter in Ordnerstruktur: Motor, Sound 1–8, Einstellungen
+- Hardware-Version umschaltbar (Neustart erforderlich)
+- Sound-Test direkt aus dem Agent heraus möglich
 
-### API-Endpunkte
+---
 
-| Methode | Pfad | Beschreibung |
-|---------|------|--------------|
-| GET | `/api/status` | Aktueller Status (Ausgänge, Kanäle, MWprop) |
-| GET/POST | `/api/config` | Konfiguration lesen/schreiben |
-| POST | `/api/switch` | Ausgang manuell schalten / freigeben |
-| POST | `/api/reset` | Werkseinstellungen |
+## Quellentypen
+
+| Code | Quelle | V1/V2 | V3/V4 |
+|---|---|---|---|
+| 0–15 | BUS-Kanal Low (1–16) | ✓ | ✓ |
+| 20–35 | BUS-Kanal High (1–16) | ✓ | ✓ |
+| 40–45 | PWM-Eingang Low (1–6) | ✓ | – |
+| 50–55 | PWM-Eingang High (1–6) | ✓ | – |
+| 60–65 | GPIO-Pin direkt (1–6) | ✓ | – |
+| 70–77 | Einkanal-Bit (1–8) | ✓ | ✓ |
+| 80–103 | Ebenen-Umschaltung | ✓ | ✓ |
+| 200 | Dauerbetrieb | ✓ | ✓ |
+| 999 | Deaktiviert | ✓ | ✓ |
+
+---
+
+## Versionshistorie
+
+| Version | Highlights |
+|---|---|
+| v0.45 | NVS statt EEPROM, CRSF-Timeout-Failsafe |
+| v0.70 | V1/V2/V3 vereint, CRSF-Parametersystem (75 Parameter) |
+| v0.84 | Hardware V4, S.Port LiPo-Telemetrie, Einzelzellen-SoC |
+| v1.22 | Weboberfläche als PROGMEM (Flash), ~60 KB RAM-Ersparnis pro Request, Dark-Mode-UI |

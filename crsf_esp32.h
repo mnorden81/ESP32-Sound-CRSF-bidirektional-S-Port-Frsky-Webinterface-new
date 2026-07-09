@@ -51,6 +51,9 @@ public:
 
     uint16_t get_crfs_channels(uint8_t ch) const { return channels[ch]; }
     uint8_t get_crfs_buffer(uint8_t ch) const { return crfs_buffer[ch]; }
+    // Separater Puffer fuer MWSET-Kommandos: wird beim Empfang gesichert, damit die
+    // spaetere Auswertung in der .ino nicht durch nachfolgende Frames (PING/PARAM) ueberschrieben wird
+    uint8_t get_cmd_buffer(uint8_t ch) const { return cmdBuffer[ch]; }
 
     bool getDeviceInfoReplyPending() const { return deviceInfoReplyPending; }
     bool getDeviceEntryReplyPending() const { return deviceEntryReplyPending; }
@@ -62,17 +65,17 @@ public:
     uint8_t getParamWriteIndex() const { return paramWriteIndex; }
     uint8_t getParamWriteValue() const { return paramWriteValue; }
     uint8_t getParamReadSource() const { return paramReadSource; }
-    // Eigene CRSF-Geraeteadresse (0xC0..0xCF, abgeleitet aus der WM-Adresse) – uebernommen aus v1.24
+    // Eigene CRSF-Geraeteadresse (0xC0..0xCF, abgeleitet aus der WM-Adresse)
     void          setDeviceAddress(uint8_t a) { deviceAddress = a; }
     uint8_t       getDeviceAddress() const { return deviceAddress; }
     unsigned long getPingTime()      const { return pingReceivedTime; }
     void addTxEcho(uint16_t n) { txEchoBytes += n; }
 
-    void setDeviceInfoReplyPending(bool newValue);
-    void setDeviceEntryReplyPending(bool newValue);
-    void setDeviceReadReplyPending(bool newValue);
-    void setDeviceWriteReplyPending(bool newValue);
-    void setDeviceCommandReplyPending(bool newValue);
+    void setDeviceInfoReplyPending(int newValue);
+    void setDeviceEntryReplyPending(int newValue);
+    void setDeviceReadReplyPending(int newValue);
+    void setDeviceWriteReplyPending(int newValue);
+    void setDeviceCommandReplyPending(int newValue);
 
     void set_crsf_channel(uint8_t ch, uint16_t value);
 
@@ -90,6 +93,7 @@ private:
     bool deviceCommandReplyPending;
 
     uint8_t crfs_buffer[CRSF_PACKET_SIZE];
+    uint8_t cmdBuffer[CRSF_PACKET_SIZE] = {0}; // gesicherte Kopie des letzten MWSET-Kommandos
     uint8_t pingSource    = 0xEA;  // Source des letzten DEVICE_PING
     uint16_t txEchoBytes  = 0;     // Gesendete Bytes zum Ueberspringen (Echo-Filter)
     uint8_t paramReadIndex  = 0;   // Angefragter Parameter-Index

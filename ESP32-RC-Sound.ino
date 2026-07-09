@@ -589,7 +589,12 @@ void loop() {
         }
     }
 
-    if(configDirty&&(millis()-configDirtyMs)>=2000UL) saveConfigForce();
+    // NVS-Speicher: 500 ms nach der letzten Aenderung schreiben. Kurz genug, dass
+    // eine Aenderung ein Ausschalten praktisch immer "ueberlebt" (frueher 2000 ms ->
+    // Aenderung ging bei schnellem Ausschalten verloren), aber lang genug, dass
+    // schnelle Schieberegler-Bursts weiterhin zu einem einzigen Schreibvorgang
+    // gebuendelt werden (der Timer wird bei jeder Aenderung zurueckgesetzt).
+    if(configDirty&&(millis()-configDirtyMs)>=500UL) saveConfigForce();
 
     Config();
     if(currentTime<5000) return;
@@ -712,12 +717,12 @@ void einkanalFunction(uint16_t ch) {
 
 // ======== Einkanal CRSF ==============================================
 void einkanalFunctionCRSF(){
-    uint8_t wmc=crsf.get_crfs_buffer(5),cmd=crsf.get_crfs_buffer(6);
+    uint8_t wmc=crsf.get_cmd_buffer(5),cmd=crsf.get_cmd_buffer(6);
     if(wmc!=Multiswitch)return;
     switch(cmd){
-        case MWset4:{uint8_t a=crsf.get_crfs_buffer(7);if(a==(uint8_t)config.modul_adress){uint16_t s=((uint16_t)crsf.get_crfs_buffer(8)<<8)|crsf.get_crfs_buffer(9);einkanal_Data=compressSwitches(s);}break;}
-        case MWset4m:{uint8_t c=min((uint8_t)crsf.get_crfs_buffer(7),(uint8_t)7);for(uint8_t i=0;i<c;i++){uint8_t a=crsf.get_crfs_buffer(8+(3*i));if(a==(uint8_t)config.modul_adress){uint16_t s=((uint16_t)crsf.get_crfs_buffer(9+(3*i))<<8)|crsf.get_crfs_buffer(10+(3*i));einkanal_Data=compressSwitches(s);}}break;}
-        case MWset:{uint8_t a=crsf.get_crfs_buffer(7);if(a==(uint8_t)config.modul_adress)einkanal_Data=crsf.get_crfs_buffer(8);break;}
+        case MWset4:{uint8_t a=crsf.get_cmd_buffer(7);if(a==(uint8_t)config.modul_adress){uint16_t s=((uint16_t)crsf.get_cmd_buffer(8)<<8)|crsf.get_cmd_buffer(9);einkanal_Data=compressSwitches(s);}break;}
+        case MWset4m:{uint8_t c=min((uint8_t)crsf.get_cmd_buffer(7),(uint8_t)7);for(uint8_t i=0;i<c;i++){uint8_t a=crsf.get_cmd_buffer(8+(3*i));if(a==(uint8_t)config.modul_adress){uint16_t s=((uint16_t)crsf.get_cmd_buffer(9+(3*i))<<8)|crsf.get_cmd_buffer(10+(3*i));einkanal_Data=compressSwitches(s);}}break;}
+        case MWset:{uint8_t a=crsf.get_cmd_buffer(7);if(a==(uint8_t)config.modul_adress)einkanal_Data=crsf.get_cmd_buffer(8);break;}
         case MWprop:break;
     }
 }
